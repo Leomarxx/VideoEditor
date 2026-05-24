@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NexClip</string>
+    <string name="security_warning">安全警告</string>
+    <string name="security_close">关闭</string>
+    <string name="privacy_title">隐私政策</string>
+    <string name="privacy_accept">同意并继续</string>
+    <string name="privacy_reject">拒绝并退出</string>
+    <string name="security_education_title">安全提示</string>
+    <string name="security_education_confirm">我知道了</string>
+</resources>

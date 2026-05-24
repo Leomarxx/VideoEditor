@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 编号12：通信安全 - 网络安全配置 -->
+<network-security-config>
+    <!-- 禁止明文通信 -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- 证书锁定（编号12层1） -->
+    <domain-config>
+        <domain includeSubdomains="true">api.nexclip.com</domain>
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">BUILD_TIME_PIN_CERT_1</pin>
+            <pin digest="SHA-256">BUILD_TIME_PIN_CERT_2</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

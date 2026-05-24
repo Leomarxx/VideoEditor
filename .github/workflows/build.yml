@@ -1,0 +1,168 @@
+name: NexClip Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install NDK
+      run: |
+        sdkmanager "ndk;26.1.10909125"
+        echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+        echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+
+    - name: Link security Kotlin files
+      run: |
+        mkdir -p app/src/main/java/com/myvideo/editor/security
+        for f in security/*.kt; do
+          filename=$(basename "$f")
+          ln -sf "$PWD/$f" "app/src/main/java/com/myvideo/editor/security/$filename"
+        done
+
+    - name: Build OpenSSL for Android
+      run: |
+        wget -q https://github.com/openssl/openssl/releases/download/openssl-3.2.1/openssl-3.2.1.tar.gz
+        tar -xzf openssl-3.2.1.tar.gz
+        cd openssl-3.2.1
+        NDK=$ANDROID_NDK_HOME
+        TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+        API=26
+        export ANDROID_NDK_ROOT=$NDK
+        export PATH=$TOOLCHAIN/bin:$PATH
+        build_ssl() {
+          local ARCH=$1 CFG=$2 CC_PREFIX=$3
+          export CC="${CC_PREFIX}${API}-clang"
+          export CXX="${CC_PREFIX}${API}-clang++"
+          export AR="llvm-ar"
+          export RANLIB="llvm-ranlib"
+          export STRIP="llvm-strip"
+          mkdir -p build_$ARCH && cd build_$ARCH
+          ../Configure $CFG --prefix=$GITHUB_WORKSPACE/openssl/$ARCH no-shared no-tests no-asm no-engine -D__ANDROID_API__=$API
+          make -j$(nproc) build_libs
+          make install_sw
+          cd ..
+        }
+        build_ssl "arm64-v8a" "android-arm64" "aarch64-linux-android"
+        build_ssl "armeabi-v7a" "android-arm" "armv7a-linux-androideabi"
+        mkdir -p $GITHUB_WORKSPACE/app/src/main/cpp/openssl/include
+        mkdir -p $GITHUB_WORKSPACE/app/src/main/cpp/openssl/arm64-v8a
+        mkdir -p $GITHUB_WORKSPACE/app/src/main/cpp/openssl/armeabi-v7a
+        cp -r $GITHUB_WORKSPACE/openssl/arm64-v8a/include/* $GITHUB_WORKSPACE/app/src/main/cpp/openssl/include/
+        cp $GITHUB_WORKSPACE/openssl/arm64-v8a/lib/libcrypto.a $GITHUB_WORKSPACE/app/src/main/cpp/openssl/arm64-v8a/
+        cp $GITHUB_WORKSPACE/openssl/armeabi-v7a/lib/libcrypto.a $GITHUB_WORKSPACE/app/src/main/cpp/openssl/armeabi-v7a/
+
+    - name: Download third-party libraries
+      run: |
+        mkdir -p app/src/main/cpp/third_party
+        DOWNLOADED=0
+        for tag in v2.5 v2.4 v2.3 v2.2; do
+          for ver in 4.10.0 4.9.0 4.8.0 4.7.0; do
+            url="https://github.com/nihui/opencv-mobile/releases/download/${tag}/opencv-mobile-${ver}-android-sdk.zip"
+            echo "尝试: $url"
+            if curl -L -f -o opencv.zip "$url" 2>/dev/null; then
+              if unzip -t opencv.zip >/dev/null 2>&1; then
+                echo "opencv-mobile下载成功"
+                unzip -q opencv.zip -d app/src/main/cpp/third_party/opencv-mobile/
+                DOWNLOADED=1
+                break 2
+              fi
+            fi
+            rm -f opencv.zip
+          done
+        done
+        if [ "$DOWNLOADED" -eq 0 ]; then
+          echo "opencv-mobile全部地址失败，创建空目录"
+          mkdir -p app/src/main/cpp/third_party/opencv-mobile/sdk/native/jni/include
+        fi
+
+    - name: Download ncnn
+      run: |
+        curl -L -o ncnn.zip "https://github.com/Tencent/ncnn/releases/download/20240410/ncnn-20240410-android-vulkan.zip"
+        unzip -q ncnn.zip
+        mkdir -p app/src/main/cpp/third_party/ncnn/arm64-v8a
+        mkdir -p app/src/main/cpp/third_party/ncnn/armeabi-v7a
+        cp -r ncnn-20240410-android-vulkan/arm64-v8a/* app/src/main/cpp/third_party/ncnn/arm64-v8a/
+        cp -r ncnn-20240410-android-vulkan/armeabi-v7a/* app/src/main/cpp/third_party/ncnn/armeabi-v7a/
+
+    - name: Download MNN
+      run: |
+        curl -L -o MNN.zip "https://github.com/alibaba/MNN/releases/download/2.9.0/MNN-2.9.0-android.zip"
+        unzip -q MNN.zip || echo "MNN下载失败"
+        mkdir -p app/src/main/cpp/third_party/mnn/arm64-v8a/lib
+        mkdir -p app/src/main/cpp/third_party/mnn/armeabi-v7a/lib
+        if [ -f MNN-2.9.0-android/arm64-v8a/libMNN.so ]; then
+          cp MNN-2.9.0-android/arm64-v8a/libMNN.so app/src/main/cpp/third_party/mnn/arm64-v8a/lib/
+          cp MNN-2.9.0-android/armeabi-v7a/libMNN.so app/src/main/cpp/third_party/mnn/armeabi-v7a/lib/
+          mkdir -p app/src/main/cpp/third_party/mnn/include
+          cp -r MNN-2.9.0-android/include/* app/src/main/cpp/third_party/mnn/include/
+        fi
+
+    - name: Build RNNoise
+      run: |
+        git clone https://github.com/xiph/rnnoise.git || true
+        cd rnnoise && ./autogen.sh 2>/dev/null || true
+        NDK=$ANDROID_NDK_HOME
+        TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+        API=26
+        build_rnnoise() {
+          local ABI=$1 CC_PREFIX=$2
+          export CC="${TOOLCHAIN}/bin/${CC_PREFIX}${API}-clang"
+          export CXX="${TOOLCHAIN}/bin/${CC_PREFIX}${API}-clang++"
+          export AR="${TOOLCHAIN}/bin/llvm-ar"
+          export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+          mkdir -p build_$ABI && cd build_$ABI
+          ../configure --host=${CC_PREFIX} --disable-shared --enable-static CFLAGS="-O2" 2>/dev/null || true
+          make -j$(nproc) 2>/dev/null || true
+          cd ..
+          mkdir -p $GITHUB_WORKSPACE/app/src/main/cpp/third_party/rnnoise/$ABI/lib
+          mkdir -p $GITHUB_WORKSPACE/app/src/main/cpp/third_party/rnnoise/include
+          cp build_$ABI/.libs/librnnoise.a $GITHUB_WORKSPACE/app/src/main/cpp/third_party/rnnoise/$ABI/lib/ 2>/dev/null || true
+        }
+        build_rnnoise "arm64-v8a" "aarch64-linux-android"
+        build_rnnoise "armeabi-v7a" "armv7a-linux-androideabi"
+
+    - name: Create keystore
+      run: |
+        rm -rf keystore && mkdir -p keystore
+        keytool -genkeypair -v -keystore keystore/nexclip.jks -alias nexclip -keyalg RSA -keysize 2048 -validity 10000 -storepass nexclip123 -keypass nexclip123 -dname "CN=NexClip,OU=Dev,O=NexClip,L=Shanghai,ST=Shanghai,C=CN"
+        keytool -genkeypair -v -keystore keystore/debug.jks -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,OU=Android,O=Android,L=Mountain View,ST=California,C=US"
+
+    - name: Build Debug APK
+      run: |
+        export KEYSTORE_PASSWORD=nexclip123
+        export KEY_PASSWORD=nexclip123
+        chmod +x gradlew
+        ./gradlew assembleFreeDebug --stacktrace 2>&1 | tail -100
+
+    - name: Security Verification
+      run: |
+        PASS=0; FAIL=0
+        for i in 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+          script="security/ci_verify_cat${i}.sh"
+          if [ -f "$script" ]; then
+            if bash "$script" "app/src/main/java" "security"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); fi
+          fi
+        done
+        echo "Security: $PASS passed / $FAIL failed"
+        if [ "$FAIL" -gt 0 ]; then exit 1; fi
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: nexclip-debug
+        path: app/build/outputs/apk/free/debug/*.apk

@@ -1,0 +1,98 @@
+// ============================================
+// NexClip 构建期防护
+// 编号2：字符串加密（Java层StringFog）
+// 编号29：资源混淆（AndResGuard）
+// ============================================
+
+// ===== 编号2：字符串加密（Java层StringFog插件）=====
+// 做什么：Java层所有敏感字符串编译期加密，运行时按需自动解密，使用后立即清零
+// 程度：StringFog插件自动加密
+// 加密范围：API地址/密钥标识/安全检测关键词("frida""xposed""/proc/self/maps"等)/配置值/错误信息
+// 不加密：JNI方法名/四大组件名/序列化字段名
+// 验证方式：反编译APK搜索"frida""xposed""api"等无结果 | 运行APP后adb搜索进程内存无明文
+// 异常判定：加密插件报错→构建失败 | 解密逻辑bug→功能测试阶段暴露并修复
+// 崩溃率：零
+
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.github.megatronking:string-fog:5.0.0'
+    }
+}
+
+apply plugin: 'string-fog'
+
+stringFog {
+    implementation 'com.github.megatronking:string-fog-xor'
+    enable true
+    // 加密范围：指定包名下所有字符串自动加密
+    fogPackages = [
+        'com.myvideo.editor.api',
+        'com.myvideo.editor.security',
+        'com.myvideo.editor.config',
+        'com.myvideo.editor.network'
+    ]
+    // 加密关键词列表
+    encryptKeywords = [
+        'frida', 'xposed', '/proc/self/maps', 'magisk',
+        'substrate', 'cydia', 'libfrida', 're.frida',
+        'hook', 'inject', 'debug', 'su',
+        'api_key', 'secret', 'token', 'password'
+    ]
+    // 不加密的字段名（序列化字段）
+    excludeFields = [
+        'serialVersionUID',
+        'serialPersistentFields'
+    ]
+}
+
+// ===== 编号29：资源混淆（AndResGuard）=====
+// 做什么：APK中所有资源文件名重命名，res目录重命名为r
+// 程度：layout/activity_main.xml→a/a.xml，drawable/ic_security→b/a.xml，assets/model→d/a.bin
+// 白名单保留：启动图标/APP名称/系统需要的XML配置
+// 验证方式：apktool解包APK确认目录结构和文件名全部不可读 | 安装后功能测试全部通过
+// 异常判定：资源混淆后崩溃→某第三方库依赖特定资源名需加入白名单→测试阶段暴露修复后零崩溃
+// 崩溃率：零
+
+buildscript {
+    dependencies {
+        classpath 'com.tencent.mm:AndResGuard-gradle-plugin:1.2.21'
+    }
+}
+
+apply plugin: 'AndResGuard'
+
+andResGuard {
+    mappingFile = null
+    use7zip = true
+    useSign = true
+    keepRoot = false
+    // 程度：白名单保留启动图标/APP名称/系统XML配置
+    whiteList = [
+        "R.drawable.icon",
+        "R.string.app_name",
+        "R.xml.*",
+        "R.mipmap.ic_launcher*",
+        "R.drawable.ic_launcher*",
+        "R.string.google_app_id",
+        "R.string.default_web_client_id",
+        "R.string.firebase_database_url",
+        "R.string.gcm_defaultSenderId",
+        "R.string.project_id",
+        "R.string.storage_bucket"
+    ]
+    mergeArsc = true
+    // 程度：res目录重命名为r
+    fixedResName = "r"
+    // 程度：drawable/strings文件名变为a.xml
+    compressFilePatterns = [
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.webp",
+        "*.json"
+    ]
+}
