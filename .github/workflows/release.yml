@@ -155,15 +155,9 @@ jobs:
 
       - name: Generate Gradle wrapper
         run: |
-          mkdir -p gradle/wrapper
-          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-          sed -i 's/^          //' gradle/wrapper/gradle-wrapper.properties
+          wget -q https://services.gradle.org/distributions/gradle-8.5-bin.zip
+          unzip -q gradle-8.5-bin.zip
+          gradle-8.5/bin/gradle wrapper --gradle-version 8.5
           chmod +x gradlew
 
       - name: Build release APKs
