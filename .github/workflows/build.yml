@@ -142,12 +142,16 @@ jobs:
         keytool -genkeypair -v -keystore keystore/nexclip.jks -alias nexclip -keyalg RSA -keysize 2048 -validity 10000 -storepass nexclip123 -keypass nexclip123 -dname "CN=NexClip,OU=Dev,O=NexClip,L=Shanghai,ST=Shanghai,C=CN"
         keytool -genkeypair -v -keystore keystore/debug.jks -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,OU=Android,O=Android,L=Mountain View,ST=California,C=US"
 
+    - name: Generate Gradle wrapper
+      run: |
+        gradle wrapper --gradle-version 8.5
+        chmod +x gradlew
+
     - name: Build Debug APK
       run: |
         export KEYSTORE_PASSWORD=nexclip123
         export KEY_PASSWORD=nexclip123
-        chmod +x gradlew
-        ./gradlew assembleFreeDebug --stacktrace 2>&1 | tail -100
+        ./gradlew assembleFreeDebug --stacktrace
 
     - name: Security Verification
       run: |
@@ -166,3 +170,4 @@ jobs:
       with:
         name: nexclip-debug
         path: app/build/outputs/apk/free/debug/*.apk
+        if-no-files-found: error
