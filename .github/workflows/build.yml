@@ -144,7 +144,15 @@ jobs:
 
     - name: Generate Gradle wrapper
       run: |
-        gradle wrapper --gradle-version 8.5
+        mkdir -p gradle/wrapper
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+        sed -i 's/^        //' gradle/wrapper/gradle-wrapper.properties
         chmod +x gradlew
 
     - name: Build Debug APK
